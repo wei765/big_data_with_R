@@ -287,6 +287,13 @@ ord_prod %>%
 
 
 ## Whisker, magrittr
+```{r}
+name<-"Bartek"
+paste0("My name is",name,".")
+whisker
+data<-list(name="Bartek")
+whisker.render("My name is {{name}}.",data)
+```
 
 ```{r}
 library(whisker)
@@ -330,7 +337,32 @@ product_times_ordered_txt %>%
 
 ## Questions
 
-* For given department, plot the most popular product (with templating department).
+#* For given department, plot the most popular product (with templating department).
+* For given department, give a list of 10 the most popular product (with templating department).
+```{r}
+product_times_ordered_txt <- "
+SELECT op.product_id, product_name
+,  COUNT(1) as n_orders
+FROM (
+        SELECT product_id
+        FROM order_products__prior_tbl
+    ) op
+left JOIN (
+        SELECT  product_name
+        ,   product_id
+        ,   department_id
+        FROM products_tbl) p
+ON op.product_id = p.product_id
+WHERE department_id = {{departmentId}}
+GROUP BY op.product_id, product_name
+ORDER BY n_orders desc
+"
+data <- list(departmentId = 19)
+product_times_ordered_txt %>%
+  whisker.render(data) %>%
+  dbGetQuery(sc, .) 
+```
+
 * For given day, rank department popularity.
 
 ## More on orders (Window Functions)
@@ -356,12 +388,102 @@ WHERE user_id <= 10
 ")
 ```
 ```{r}
+#
 dbGetQuery(sc, 
 "SELECT user_id
 ,   order_id
 ,   FIRST_VALUE(order_id)  OVER(partition by user_id ORDER BY order_number) AS first_order
 FROM orders_tbl
 WHERE user_id <= 10 
+")
+```
+* Product that is usually orders in numerous baskets
+
+```{r}
+"
+SELECT product_id
+,   AVG(products_number) AS avg_products_number
+FROM (
+    SELECT order_id
+    ,   product_id
+    ,   COUNT(product_id)  OVER(partition by order_id) AS products_number
+    FROM order_products__train_tbl
+) pn
+GROUP BY product_id
+ORDER BY avg_products_number DESC
+LIMIT 100
+" %>%
+dbGetQuery(sc, .)
+```
+
+* Could modify the query and add prduct name?
+
+```{r}
+"
+SELECT op1.product_id
+,  avg_products_number, p.product_name
+From(select product_id
+,   AVG(products_number) AS avg_products_number
+FROM (
+    SELECT order_id
+    ,   product_id
+    ,   COUNT(product_id)  OVER(partition by order_id) AS products_number
+    FROM order_products__train_tbl
+) pn 
+GROUP BY product_id
+ORDER BY avg_products_number DESC) op1 
+LEFT JOIN (
+    SELECT product_id
+    ,   product_name
+    FROM products_tbl) p
+ON op1.product_id = p.product_id
+
+
+" %>%
+dbGetQuery(sc, .)
+```
+
+*Product that is usually orders in small baskets
+```{r}
+"
+SELECT op1.product_id
+,  avg_products_number, p.product_name
+From(select product_id
+,   AVG(products_number) AS avg_products_number
+FROM (
+    SELECT order_id
+    ,   product_id
+    ,   COUNT(product_id)  OVER(partition by order_id) AS products_number
+    FROM order_products__train_tbl
+) pn 
+GROUP BY product_id
+ORDER BY avg_products_number ) op1 
+LEFT JOIN (
+    SELECT product_id
+    ,   product_name
+    FROM products_tbl) p
+ON op1.product_id = p.product_id
+
+
+" %>%
+dbGetQuery(sc, .)
+```
+
+
+*for 10 first users and all their orders find days since first order
+
+```{r}
+dbGetQuery(sc, 
+"
+SELECT  user_id
+,   order_id
+,   IF( first_order IS NULL, 0,  first_order) AS days_since_first_order
+FROM
+(SELECT user_id
+,   order_id
+, sum(days_since_prior_order) OVER(partition by user_id ORDER BY order_number) AS first_order
+FROM orders_tbl
+WHERE user_id <= 10 ) aaa
 ")
 ```
 

@@ -12,16 +12,9 @@ readFootball()
 library(ggplot2)
 library(ggthemes)
 
-##print(dbListTables(con))
+print(dbListTables(sql_con))
 ```
 
-```
-select ~ SELECT
-filter ~ WHERE
-arrange ~ ORDER
-summarise ~ aggregators: sum, min, sd, etc.
-mutate ~ operators: +, *, log, etc.
-```
 ## Pipes
 
 ```{r}
@@ -30,12 +23,27 @@ players %>%
 ```
 
 ```{r}
-players %>%
-  colnames
+dbGetQuery(sql_con, "
+SELECT *
+FROM Player
+LIMIT 6
+")
 ```
+
 ```{r}
 players %>%
+  colnames
+
+#dbGetQuery(sql_con,"DESC Player")
+```
+
+```{r}
+sapply(players, class)
+
+players %>%
   sapply(class)
+
+class %>% sapply(players,.)
 ```
 
 
@@ -48,12 +56,30 @@ players %>%
   select(player_name, birthday)
 ```
 
+```{r}
+dbGetQuery(sql_con, "
+SELECT player_name
+,   birthday
+FROM Player
+LIMIT 6
+")
+```
+
 ## WHERE ~ filter
 
 ```{r}
 players %>%
   filter(birthday >= "1998") %>%
   head
+```
+
+```{r}
+dbGetQuery(sql_con, "
+SELECT *
+FROM Player
+where birthday>=1998
+LIMIT 6
+")
 ```
 
 ## ORDER ~ arrange
@@ -64,11 +90,27 @@ players %>%
   head
 ```
 
+```{r}
+dbGetQuery(sql_con, "
+SELECT *
+FROM Player
+order by birthday
+LIMIT 6
+")
+```
+
 ## aggregators ~ summarise
 
 ```{r}
 players %>%
   summarise(weight=mean(weight), height=mean(height))
+```
+
+```{r}
+dbGetQuery(sql_con, "
+SELECT AVG(weight) as weight, avg(height) as height
+FROM Player
+")
 ```
 
 ## mutate
@@ -77,6 +119,17 @@ players %>%
 players %>%
   mutate(weight_kg = weight*0.45359237) %>%
   summarise(weight=mean(weight_kg), height=mean(height))
+```
+
+```{r}
+dbGetQuery(sql_con, "
+SELECT avg(weight*0.45359237) as weight, avg(height) as height
+FROM Player
+")
+
+"SELECT avg(weight*0.45359237) as weight, avg(height) as height
+FROM Player
+" %>% dbGetQuery(sql_con,.)
 ```
 
 ## GROUP BY
@@ -90,11 +143,52 @@ players %>%
   geom_line(colour="darkorange") +
   theme_minimal()
 ```
+
+```{r}
+dbGetQuery(sql_con, "select 
+cast(birthday as datetime) as year, avg(height) as height
+from Player
+group by year
+order by year
+") %>%
+  ggplot(aes(year, height)) +
+  geom_line(colour="darkorange") +
+  theme_minimal()
+
+
+"SELECT CAST(SUBSTR(birthday,1,4) as INT) AS year
+, count(1) as n
+from Player
+group by cast(substr(birthday,1,4) as INT)
+" %>%
+  dbGetQuery(sql_con,.) %>%
+  ggplot(aes(year, height)) +
+  geom_line(colour="darkorange") +
+  theme_minimal()
+
+```
+
+
+
+
+
 ```{r}
 players %>%
   mutate(year=as.numeric(substring(birthday, 1, 4))) %>%
   group_by(year) %>%
   summarise(nsample=n()) %>%
+  ggplot(aes(year, nsample)) +
+  geom_line(colour="darkorange") +
+  theme_minimal()
+```
+
+```{r}
+dbGetQuery(sql_con, "select 
+cast(birthday as datetime) as year, count() as nsample
+from Player
+group by year
+order by year
+")%>%
   ggplot(aes(year, nsample)) +
   geom_line(colour="darkorange") +
   theme_minimal()
@@ -109,4 +203,84 @@ players %>%
   ggplot(aes(year, weight)) +
   geom_line(colour="darkorange") +
   theme_minimal()
+```
+
+```{r}
+dbGetQuery(sql_con, "select 
+cast(birthday as datetime) as year, count() as nsample, avg(height) as height
+from Player
+group by year
+having nsample>=200
+order by year
+")%>%
+  ggplot(aes(year, height)) +
+  geom_line(colour="darkorange") +
+  theme_minimal()
+```
+
+Exercise
+
+* Translate from SQL to dply or from dply to SQL
+```{r}
+dbGetQuery(sql_con, "
+SELECT *
+FROM Match
+LIMIT 6
+")
+
+games %>%head
+```
+
+
+
+```{r}
+dbGetQuery(sql_con, "
+SELECT country_id
+,   COUNT(1) AS n
+FROM Match
+GROUP BY country_id
+ORDER BY n DESC
+")
+
+games %>% group_by(country_id) %>% summarise(nsample=n()) %>%arrange(desc(nsample))
+```
+
+
+```{r}
+countries
+```
+
+
+```{r}
+games %>%
+  left_join(countries, by=c("country_id" = "id")) %>%
+  select(name, home_team_api_id) %>%
+  group_by(name) %>%
+  summarise(teams = n_distinct(home_team_api_id)) %>%
+  arrange(desc(teams))
+```
+
+
+
+```{r}
+dbGetQuery(sql_con, "
+SELECT *
+FROM Player_Attributes
+LIMIT 6
+")
+
+```
+
+* From where do players with higest accuracy come from?
+
+* Add team name and translate to dplyr
+
+```{r}
+dbGetQuery(sql_con, "
+SELECT stage, home_team_api_id, home_team_goal
+FROM Match
+WHERE country_id = 1
+AND season = '2008/2009'
+ORDER BY stage
+")
 ```
