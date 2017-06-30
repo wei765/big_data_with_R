@@ -31,6 +31,9 @@ movie_ratings
 ```{r}
 explicit_model <- ml_als_factorization(movie_ratings, iter.max = 5, regularization.parameter = 0.01)
 explicit_model$item.factors
+explicit_model$user.factors
+
+as.matrix(explicit_model$user.factors[,-1])  %*% as.matrix(t(explicit_model$item.factors[,-1]))
 ```
 
 

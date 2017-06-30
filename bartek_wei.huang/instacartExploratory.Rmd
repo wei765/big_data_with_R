@@ -248,35 +248,39 @@ products_reorded
 
 * Plot histogram of number of products in an order.
 ```{r}
-ord_prod_txt="SELECT order_id,  max(add_to_cart_order) as n_prod
-    FROM order_products_train_tbl 
-    group by order_id
-    order by n_prod desc
-    LIMIT 10"
-ord_prod_txt="SELECT order_id,  count(1) as n_prod
-    FROM order_products_train_tbl 
-    group by order_id
-    order by n_prod desc
-"
-ord_prod <-
-  dbGetQuery(sc, ord_prod_txt)
-ord_prod
+# ord_prod_txt="SELECT order_id,  max(add_to_cart_order) as n_prod
+#     FROM order_products__train_tbl 
+#     group by order_id
+#     order by n_prod desc
+#     LIMIT 10"
 
-dbGetQuery(sc, "SELECT order_id,  count(1) as n_prod
-    FROM order_products_train_tbl 
-    group by order_id
-    order by n_prod desc")
+dbGetQuery(sc,"SELECT count(distinct order_id)
+    FROM order_products__train_tbl 
+" )
 
-ord_prod %>%
-  ggplot(
-    aes(reorder(order_id, n_prod, function(x) x), 
-        n_prod)) +
-  geom_bar(stat="identity", fill='darkorange') +
-  coord_flip() + 
-  scale_y_continuous(label=scales::comma) +
-  xlab("order") +
-  ylab("product") +
+order= dbGetQuery(sc, 
+"select n_products, count(order_id) as n_orders
+ from (SELECT order_id,  count(1) as n_products
+    FROM order_products__prior_tbl 
+    group by order_id) op
+    group by n_products ") 
+order %>% ggplot(aes(n_products, n_orders)) + geom_bar(stat="identity",fill='darkorange')+theme_minimal()
+
+order%>% filter(n_orders>80)%>% ggplot(aes(n_products, n_orders)) + geom_col(fill='darkorange')+theme_minimal()
+
+```
+```{r}
+breakint=5
+order_products__prior%>% 
+  group_by(order_id) %>%
+  summarise(n_products=n()) %>%
+  group_by(breakprod=breakint*floor(n_products%/%breakint))%>%
+  summarise(n_orders=n()) %>%
+  filter(breakprod<=50) %>% collect %>%
+  ggplot(aes(breakprod,n_orders)) +
+  geom_col(fill="darkorange")+
   theme_minimal()
+  
 ```
 
 
@@ -471,19 +475,42 @@ dbGetQuery(sc, .)
 
 
 *for 10 first users and all their orders find days since first order
-
+google :hive window funciton
 ```{r}
+# dbGetQuery(sc, 
+# "
+# SELECT  user_id
+# ,   order_id
+# ,   IF( first_order IS NULL, 0,  first_order) AS days_since_first_order
+# FROM
+# (SELECT user_id
+# ,   order_id
+# , sum(days_since_prior_order) OVER(partition by user_id ORDER BY order_number) AS first_order
+# FROM orders_tbl
+# WHERE user_id <= 10 ) aaa
+# ORDER BY USER_ID
+# ")
+
 dbGetQuery(sc, 
 "
-SELECT  user_id
-,   order_id
-,   IF( first_order IS NULL, 0,  first_order) AS days_since_first_order
-FROM
-(SELECT user_id
-,   order_id
-, sum(days_since_prior_order) OVER(partition by user_id ORDER BY order_number) AS first_order
+SELECT user_id
+,   order_number, days_since_prior_order
+, COALESCE(sum(days_since_prior_order) OVER(partition by user_id ORDER BY order_number ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) ,0) AS day_since_first_order
 FROM orders_tbl
-WHERE user_id <= 10 ) aaa
+WHERE user_id <= 10 
+ORDER BY USER_ID, order_number
 ")
 ```
+
+
+
+```{r}
+orders %>%
+  filter(user_id <= 10) %>%
+  select(user_id, order_number, days_since_prior_order) %>%
+  arrange(user_id, order_number) %>%
+  mutate(days_since_first_order = cumsum(days_since_prior_order)) %>%
+  mutate(days_since_first_order=ifelse(is.null(days_since_prior_order), 0, days_since_first_order))
+```
+
 
